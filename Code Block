@@ -1,1 +1,200 @@
 
+#Run MySQL in Docker:#
+
+docker run --name mysql-db -e MYSQL_ROOT_PASSWORD=yourpassword -e MYSQL_DATABASE=microshop -p 3306:3306 -d mysql:latest
+
+# Explanation: This command will start a MySQL database with the database name Microshop and a root password your password. Replace your password with a secure password you prefer.#
+
+Create a project directory:
+mkdir microshop-backend && cd microshop-backend
+
+#Initialize the Node.js project:#
+npm init -y
+
+#Install necessary packages:#
+npm install express sequelize mysql2
+
+#Create an index.js file and paste the following code:#
+const express = require('express');
+const { Sequelize, DataTypes } = require('sequelize');
+
+// Database connection
+const sequelize = new Sequelize('microshop', 'root', 'yourpassword', {
+    host: 'localhost',
+    dialect: 'mysql'
+});
+
+const app = express();
+app.use(express.json());
+
+// Test the database connection
+sequelize.authenticate().then(() => {
+    console.log('Database connected.');
+}).catch((err) => {
+    console.error('Unable to connect to the database:', err);
+});
+
+// Define models
+const User = sequelize.define('User', {
+    name: DataTypes.STRING,
+    email: DataTypes.STRING,
+    password: DataTypes.STRING,
+});
+
+const Product = sequelize.define('Product', {
+    name: DataTypes.STRING,
+    description: DataTypes.TEXT,
+    price: DataTypes.DECIMAL,
+    stock: DataTypes.INTEGER,
+});
+
+const Order = sequelize.define('Order', {
+    userId: DataTypes.INTEGER,
+    productId: DataTypes.INTEGER,
+    quantity: DataTypes.INTEGER,
+    totalPrice: DataTypes.DECIMAL,
+    status: DataTypes.STRING,
+});
+
+// Define relationships
+User.hasMany(Order);
+Product.hasMany(Order);
+Order.belongsTo(User);
+Order.belongsTo(Product);
+
+// Sync models to the database
+sequelize.sync();
+
+// API endpoints
+app.get('/products', async (req, res) => {
+    const products = await Product.findAll();
+    res.json(products);
+});
+
+app.post('/order', async (req, res) => {
+    const { userId, productId, quantity } = req.body;
+    const product = await Product.findByPk(productId);
+    const totalPrice = product.price * quantity;
+    const order = await Order.create({ userId, productId, quantity, totalPrice, status: 'pending' });
+    res.json(order);
+});
+
+app.listen(3000, () => {
+    console.log('Server running on port 3000');
+});
+
+#Notes:
+Replace your password in the Sequelize configuration with the same password used in the MySQL Docker setup.
+The sequelize.sync() command will automatically create the tables if they don’t exist. #
+
+#Run the application#
+node index.js
+
+#Visit http://localhost:3000/products in your browser or use Postman to test the API.#
+
+
+#Dockerize the Application
+Create a Dockerfile in the project root:#
+
+# Use Node.js base image
+FROM node:14
+
+# Set the working directory
+WORKDIR /app
+
+# Copy package.json and install dependencies
+COPY package*.json ./
+RUN npm install
+
+# Copy the rest of the application code
+COPY . .
+
+# Expose port 3000
+EXPOSE 3000
+
+# Run the application
+CMD ["node", "index.js"]
+
+
+#Build and run the Docker container:
+Build the Docker image:#
+
+docker build -t microshop-backend .
+docker run -p 3000:3000 microshop-backend
+
+
+#Kubernetes Setup (Minikube or Kubernetes Cluster)
+Create Backend Deployment in Kubernetes:
+
+Create a backend-deployment.yaml file:#
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: microshop-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: microshop-backend
+  template:
+    metadata:
+      labels:
+        app: microshop-backend
+    spec:
+      containers:
+      - name: microshop-backend
+        image: microshop-backend:latest
+        ports:
+        - containerPort: 3000
+
+#Create MySQL Deployment in Kubernetes:
+Create a mysql-deployment.yaml file:#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql-db
+  template:
+    metadata:
+      labels:
+        app: mysql-db
+    spec:
+      containers:
+      - name: mysql-db
+        image: mysql:latest
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: "yourpassword"
+        - name: MYSQL_DATABASE
+          value: "microshop"
+        ports:
+        - containerPort: 3306
+
+#Deploy to Kubernetes:
+
+Apply the deployments:#
+
+kubectl apply -f backend-deployment.yaml
+kubectl apply -f mysql-deployment.yaml
+
+
+#Expose the Services:
+Expose the backend deployment:#
+kubectl expose deployment microshop-backend --type=LoadBalancer --port=3000
+
+
+#Expose the MySQL deployment as a ClusterIP service:#
+kubectl expose deployment mysql-db --type=ClusterIP --port=3306
+
+#Access the Backend Service:#
+#If you're using Minikube, run the following to get the IP and port:#
+minikube service microshop-backend --url
+
+#Access the service URL in your browser or via Postman to confirm it’s running.#
+
+
